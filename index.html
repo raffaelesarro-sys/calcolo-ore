@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b5ea8">
+<title>Calcolatore orario SAM - previsione giornaliera</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<style>
+:root{
+  --bg:#f4f7fb; --card:#fff; --ink:#17212b; --muted:#607080; --line:#d9e1e8;
+  --blue:#0b5ea8; --blue2:#eaf3fb; --green:#176b3a; --greenbg:#eaf6ef;
+  --amber:#855b00; --amberbg:#fff4d7; --red:#982f2f; --redbg:#fdecec;
+  --shadow:0 2px 12px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  line-height:1.35;
+}
+main{max-width:760px;margin:0 auto;padding:14px 12px 32px}
+header{
+  background:linear-gradient(135deg,#0b5ea8,#17466f);
+  color:#fff; padding:18px 16px; border-radius:16px; box-shadow:var(--shadow);
+  margin-bottom:14px;
+}
+h1{font-size:21px;margin:0 0 5px}
+header p{margin:0;opacity:.9;font-size:13px}
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:16px;
+  box-shadow:var(--shadow); padding:14px; margin:12px 0;
+}
+h2{font-size:17px;margin:0 0 10px;color:#17466f}
+.pair{
+  display:grid; grid-template-columns:38px 1fr 1fr; gap:8px; align-items:end;
+  padding:8px 0; border-bottom:1px solid #edf1f5;
+}
+.pair:last-child{border-bottom:0}
+.idx{
+  align-self:center; text-align:center; font-weight:700; color:var(--muted);
+  background:#eef3f7; border-radius:10px; padding:9px 4px;
+}
+label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+input{
+  width:100%; min-height:46px; font-size:18px; padding:8px 10px;
+  border:1px solid #bac7d2; border-radius:10px; background:#fff; color:var(--ink);
+}
+input:focus{outline:3px solid rgba(11,94,168,.15);border-color:var(--blue)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+button{
+  min-height:48px; border:0; border-radius:12px; font-weight:700; font-size:15px;
+  padding:10px 12px; cursor:pointer;
+}
+.primary{background:var(--blue);color:#fff}
+.secondary{background:#e9eef3;color:#23313f}
+.result{
+  display:grid; grid-template-columns:1fr 1fr; gap:9px;
+}
+.metric{
+  border:1px solid var(--line); border-radius:12px; padding:11px; background:#fbfcfd;
+}
+.metric .v{font-size:23px;font-weight:800;color:#17466f}
+.metric .k{font-size:11px;color:var(--muted);margin-top:2px}
+.status{border-radius:12px;padding:12px 13px;font-weight:700;margin-bottom:10px}
+.ok{background:var(--greenbg);color:var(--green)}
+.warn{background:var(--amberbg);color:var(--amber)}
+.bad{background:var(--redbg);color:var(--red)}
+.exitbox{
+  background:var(--blue2); border-left:5px solid var(--blue); padding:13px;
+  border-radius:10px; margin-top:10px;
+}
+.exitbox strong{font-size:20px;color:#17466f}
+.small{font-size:12px;color:var(--muted)}
+details{margin-top:10px}
+summary{font-weight:700;color:#17466f;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+th,td{padding:7px 5px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--muted);font-weight:700}
+.right{text-align:right}
+.note{
+  background:#fff8e8; border-left:4px solid #c58a16; padding:10px 11px;
+  border-radius:9px; font-size:12px; margin-top:10px;
+}
+.err{color:var(--red);font-weight:700;font-size:12px;margin-top:8px}
+@media (max-width:420px){
+  main{padding:9px 8px 24px}
+  .card{padding:11px}
+  .pair{grid-template-columns:32px 1fr 1fr;gap:6px}
+  input{font-size:17px;padding:7px 8px}
+  .metric .v{font-size:21px}
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Calcolatore orario SAM</h1>
+  <p>Previsione giornaliera secondo i criteri comunicati: allineamento E/U ai 15', permessi e straordinari a blocchi di 30'.</p>
+</header>
+
+<section class="card">
+  <h2>Marcature del giorno</h2>
+  <div id="pairs"></div>
+  <div class="actions">
+    <button class="primary" id="calcBtn">Calcola</button>
+    <button class="secondary" id="clearBtn">Azzera</button>
+  </div>
+  <div id="error" class="err"></div>
+  <p class="small">Formato 24 ore. Sono accettati indifferentemente: <b>7:54</b>, <b>07:54</b>, <b>7.54</b>, <b>7,54</b>, anche <b>0754</b>. Puoi inserire fino a 8 coppie.</p>
+</section>
+
+<section class="card">
+  <h2>Report previsionale</h2>
+  <div id="status" class="status warn">Inserisci almeno un'entrata.</div>
+  <div class="result">
+    <div class="metric"><div class="v" id="actual">0:00</div><div class="k">Tempo reale marcato</div></div>
+    <div class="metric"><div class="v" id="recognized">0:00</div><div class="k">Tempo riconoscibile dopo allineamento 15'</div></div>
+    <div class="metric"><div class="v" id="missing">8:00</div><div class="k">Mancano alle 8 ore</div></div>
+    <div class="metric"><div class="v" id="permit">8:00</div><div class="k">Permesso teorico se chiudessi ora*</div></div>
+    <div class="metric"><div class="v" id="overtime">0:00</div><div class="k">Straordinario teorico riconoscibile</div></div>
+    <div class="metric"><div class="v" id="discarded">0:00</div><div class="k">Minuti assorbiti dall'allineamento</div></div>
+  </div>
+  <div id="exitBox" class="exitbox" style="display:none"></div>
+  <div id="detail"></div>
+  <button type="button" class="primary" id="downloadBtn" disabled style="width:100%;margin-top:14px">⬇ Scarica report TXT</button>
+  <p class="small">Nome del file: report_GGMMAAHHMM.txt. I dati restano nel dispositivo.</p>
+  <div class="note">
+    * Previsione tecnica, non cedolino ufficiale. Il calcolo assume: ingresso al quarto d'ora successivo,
+    uscita al quarto d'ora precedente; compensazione nella giornata; permesso arrotondato al blocco
+    successivo di 30'; straordinario riconosciuto solo per blocchi continuativi di almeno 30'.
+    Eventuali causali, autorizzazioni o elaborazioni SAM possono modificare il risultato effettivo.
+  </div>
+</section>
+
+<section class="card">
+  <details>
+    <summary>Algoritmo usato</summary>
+    <ol class="small">
+      <li>Ogni entrata viene portata al quarto d'ora utile successivo.</li>
+      <li>Ogni uscita viene portata al quarto d'ora utile precedente.</li>
+      <li>Le durate riconoscibili delle coppie vengono sommate e compensate nella stessa giornata.</li>
+      <li>Sotto 8:00 viene mostrato il deficit; il permesso teorico è arrotondato per eccesso a blocchi di 30 minuti.</li>
+      <li>Oltre 8:00, lo straordinario viene conteggiato solo nei blocchi continuativi post-soglia di almeno 30 minuti, senza sommare spezzoni separati da 15 minuti.</li>
+      <li>Viene sempre indicata l'uscita utile per completare le 8 ore: se l'ultima coppia è aperta, calcola quando uscire; se è già chiusa ma mancano minuti, indica a che ora sarebbe stato necessario uscire prolungando l'ultima presenza.</li>
+    </ol>
+  </details>
+</section>
+</main>
+
+<script>
+const pairBox = document.getElementById('pairs');
+for(let i=1;i<=8;i++){
+  pairBox.insertAdjacentHTML('beforeend',`
+    <div class="pair">
+      <div class="idx">${i}</div>
+      <div><label>Entrata ${i}</label><input inputmode="decimal" autocomplete="off" id="in${i}" placeholder="es. 07:54"></div>
+      <div><label>Uscita ${i}</label><input inputmode="decimal" autocomplete="off" id="out${i}" placeholder="es. 12:31"></div>
+    </div>`);
+}
+
+function parseTime(v){
+  if(!v || !v.trim()) return null;
+  let s=v.trim().replace(/[.,]/g,':').replace(/\s+/g,'');
+  let h,m;
+  if(/^\d{3,4}$/.test(s)){
+    if(s.length===3){ h=+s.slice(0,1); m=+s.slice(1); }
+    else { h=+s.slice(0,2); m=+s.slice(2); }
+  } else {
+    const a=s.split(':');
+    if(a.length===1){ h=+a[0]; m=0; }
+    else if(a.length===2 && /^\d{1,2}$/.test(a[0]) && /^\d{1,2}$/.test(a[1])){ h=+a[0]; m=+a[1]; }
+    else return NaN;
+  }
+  if(!Number.isInteger(h)||!Number.isInteger(m)||h<0||h>23||m<0||m>59) return NaN;
+  return h*60+m;
+}
+function fmt(min){
+  min=Math.max(0,Math.round(min));
+  return `${Math.floor(min/60)}:${String(min%60).padStart(2,'0')}`;
+}
+function clock(min){
+  min=((Math.round(min)%1440)+1440)%1440;
+  return `${String(Math.floor(min/60)).padStart(2,'0')}:${String(min%60).padStart(2,'0')}`;
+}
+function ceil15(m){ return Math.ceil(m/15)*15; }
+function floor15(m){ return Math.floor(m/15)*15; }
+function ceil30(m){ return m<=0?0:Math.ceil(m/30)*30; }
+
+let lastReport = null;
+function calculate(){
+  lastReport = null; document.getElementById("downloadBtn").disabled=true;
+  const err=document.getElementById('error'); err.textContent='';
+  let pairs=[], open=null, seenBlank=false;
+
+  for(let i=1;i<=8;i++){
+    const iv=document.getElementById(`in${i}`).value;
+    const ov=document.getElementById(`out${i}`).value;
+    const tin=parseTime(iv), tout=parseTime(ov);
+
+    if(Number.isNaN(tin)||Number.isNaN(tout)){ err.textContent=`Orario non valido nella coppia ${i}.`; return; }
+    if(tin===null && tout!==null){ err.textContent=`Manca l'entrata nella coppia ${i}.`; return; }
+    if(tin===null && tout===null){ seenBlank=true; continue; }
+    if(seenBlank){ err.textContent=`Compila le coppie in ordine, senza lasciare righe vuote intermedie.`; return; }
+
+    if(open){ err.textContent="La coppia aperta deve essere l’ultima compilata."; return; }
+    if(tout===null){
+      if(open){ err.textContent='Può esserci una sola coppia aperta.'; return; }
+      open={i,tin};
+      continue;
+    }
+    if(tout<=tin){ err.textContent=`L'uscita ${i} deve essere successiva all'entrata.`; return; }
+    if(pairs.length && tin < pairs[pairs.length-1].tout){ err.textContent=`La coppia ${i} si sovrappone alla precedente.`; return; }
+
+    const ain=ceil15(tin), aout=floor15(tout);
+    const rec=Math.max(0,aout-ain);
+    pairs.push({i,tin,tout,ain,aout,actual:tout-tin,rec});
+  }
+
+  if(!pairs.length && !open){
+    document.getElementById('status').className='status warn';
+    document.getElementById('status').textContent="Inserisci almeno un'entrata.";
+    return;
+  }
+
+  const actual = pairs.reduce((s,p)=>s+p.actual,0);
+  const recognized = pairs.reduce((s,p)=>s+p.rec,0);
+  const discarded = Math.max(0,actual-recognized);
+
+  let cumulative=0, overtime=0;
+  for(const p of pairs){
+    const before=cumulative;
+    const after=cumulative+p.rec;
+    if(after>480){
+      const post=Math.max(0, after-Math.max(480,before));
+      overtime += Math.floor(post/30)*30;
+    }
+    cumulative=after;
+  }
+
+  const missing=Math.max(0,480-recognized);
+  const permit=recognized>=480?0:ceil30(missing);
+
+  document.getElementById('actual').textContent=fmt(actual);
+  document.getElementById('recognized').textContent=fmt(recognized);
+  document.getElementById('missing').textContent=fmt(missing);
+  document.getElementById('permit').textContent=fmt(permit);
+  document.getElementById('overtime').textContent=fmt(overtime);
+  document.getElementById('discarded').textContent=fmt(discarded);
+
+  const status=document.getElementById('status');
+  if(recognized>=480){
+    status.className='status ok';
+    status.textContent=`8 ore raggiunte. Totale riconoscibile: ${fmt(recognized)}${overtime?` — straordinario teorico: ${fmt(overtime)}`:''}.`;
+  }else if(open){
+    status.className='status warn';
+    status.textContent=`Giornata aperta: mancano ${fmt(missing)} riconoscibili alle 8 ore.`;
+  }else{
+    status.className='status bad';
+    status.textContent=`8 ore non raggiunte: mancano ${fmt(missing)}. Permesso teorico: ${fmt(permit)}.`;
+  }
+
+  const exitBox=document.getElementById('exitBox');
+  const needForEight=Math.max(0,480-recognized);
+
+  if(open){
+    const ain=ceil15(open.tin);
+    const targetAlignedOut=ain+needForEight;
+    exitBox.style.display='block';
+    if(needForEight===0){
+      exitBox.innerHTML=`Hai già raggiunto le 8 ore con le coppie precedenti.`;
+    }else{
+      exitBox.innerHTML=
+        `<span class="small">Per completare le 8 ore dovresti uscire alle:</span><br>
+         <strong>${clock(targetAlignedOut)}</strong><br>
+         <span class="small">Entrata corrente: ${clock(open.tin)} → allineata a ${clock(ain)}. Mancano ${fmt(needForEight)} riconoscibili.</span>`;
+    }
+  } else if (pairs.length && needForEight>0) {
+    // Giornata già chiusa: mostra a che ora sarebbe stato necessario timbrare
+    // l'ultima uscita, prolungando l'ultima coppia fino al quarto utile.
+    const last=pairs[pairs.length-1];
+    const targetAlignedOut=last.aout+needForEight;
+    exitBox.style.display='block';
+    exitBox.innerHTML=
+      `<span class="small">Per completare le 8 ore avresti dovuto uscire alle:</span><br>
+       <strong>${clock(targetAlignedOut)}</strong><br>
+       <span class="small">Ultima uscita inserita: ${clock(last.tout)} → riconosciuta fino alle ${clock(last.aout)}. Mancano ${fmt(needForEight)} riconoscibili.</span>`;
+  } else {
+    exitBox.style.display='block';
+    exitBox.innerHTML=`<strong>8 ore completate.</strong>`;
+  }
+
+  let rows='';
+  for(const p of pairs){
+    rows += `<tr><td>${p.i}</td><td>${clock(p.tin)} → ${clock(p.tout)}</td><td>${clock(p.ain)} → ${clock(p.aout)}</td><td class="right">${fmt(p.rec)}</td></tr>`;
+  }
+  if(open){
+    rows += `<tr><td>${open.i}</td><td>${clock(open.tin)} → …</td><td>${clock(ceil15(open.tin))} → …</td><td class="right">aperta</td></tr>`;
+  }
+  lastReport={pairs,open,actual,recognized,missing,permit,overtime,discarded};
+  document.getElementById('downloadBtn').disabled=false;
+  document.getElementById('detail').innerHTML=`
+    <details>
+      <summary>Dettaglio delle coppie</summary>
+      <table><thead><tr><th>#</th><th>Reale</th><th>Allineato 15'</th><th class="right">Riconoscibile</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </details>`;
+}
+
+function reportText(data,stamp){
+  const lines=[
+    'CALCOLATORE ORARIO SAM - REPORT PREVISIONALE',
+    `Generato il: ${String(stamp.getDate()).padStart(2,'0')}/${String(stamp.getMonth()+1).padStart(2,'0')}/${stamp.getFullYear()} ${String(stamp.getHours()).padStart(2,'0')}:${String(stamp.getMinutes()).padStart(2,'0')}`,
+    '', 'TIMBRATURE (REALE / ALLINEATO AL QUARTO D’ORA)'];
+  for(const p of data.pairs){
+    lines.push(`${p.i}. ${clock(p.tin)} - ${clock(p.tout)} | ${clock(p.ain)} - ${clock(p.aout)} | durata reale ${fmt(p.actual)} | riconoscibile ${fmt(p.rec)}`);
+  }
+  if(data.open) lines.push(`${data.open.i}. ${clock(data.open.tin)} - [USCITA NON INSERITA] | entrata allineata ${clock(ceil15(data.open.tin))}`);
+  lines.push('', 'RIEPILOGO',
+    `Ore effettive delle coppie chiuse: ${fmt(data.actual)}`,
+    `Ore riconoscibili dopo allineamento: ${fmt(data.recognized)}`,
+    `Minuti assorbiti dall'allineamento: ${fmt(data.discarded)}`,
+    `Mancanti per raggiungere otto ore: ${fmt(data.missing)}`,
+    `Permesso teorico (blocchi da trenta minuti): ${fmt(data.permit)}`,
+    `Straordinario teorico riconoscibile: ${fmt(data.overtime)}`,
+    `Giornata: ${data.open?'APERTA':'CHIUSA'}`,
+    '', 'CRITERI DELLA SIMULAZIONE',
+    'Entrate al quarto successivo; uscite al quarto precedente.',
+    'Somma delle durate allineate nella giornata.',
+    'Permesso teorico per eccesso a blocchi di trenta minuti.',
+    'Straordinario teorico a blocchi continuativi di trenta minuti oltre otto ore, senza accumulo di spezzoni separati.',
+    '', 'AVVERTENZA: simulazione non ufficiale. Causali, autorizzazioni, compensazioni e regole SAM possono variare il riconoscimento.');
+  return lines.join('\r\n')+'\r\n';
+}
+function downloadReport(){
+  calculate();
+  if(!lastReport)return;
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const filename=`report_${pad(now.getDate())}${pad(now.getMonth()+1)}${String(now.getFullYear()).slice(-2)}${pad(now.getHours())}${pad(now.getMinutes())}.txt`;
+  const blob=new Blob([reportText(lastReport,now)],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+document.getElementById('downloadBtn').addEventListener('click',downloadReport);
+document.getElementById('calcBtn').addEventListener('click',calculate);
+document.getElementById('clearBtn').addEventListener('click',()=>{
+  lastReport=null;document.getElementById('downloadBtn').disabled=true;
+  document.querySelectorAll('input').forEach(x=>x.value='');
+  document.getElementById('detail').innerHTML='';
+  document.getElementById('exitBox').style.display='none';
+  document.getElementById('error').textContent='';
+  ['actual','recognized','overtime','discarded'].forEach(id=>document.getElementById(id).textContent='0:00');
+  document.getElementById('missing').textContent='8:00';
+  document.getElementById('permit').textContent='8:00';
+  document.getElementById('status').className='status warn';
+  document.getElementById('status').textContent="Inserisci almeno un'entrata.";
+});
+document.querySelectorAll('#pairs input').forEach(input=>input.addEventListener('input',()=>{lastReport=null;document.getElementById('downloadBtn').disabled=true;}));
+</script>
+</body>
+</html>
