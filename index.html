@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#162c45">
+<title>Calcolatore ore lavorate</title>
+<style>
+:root{color-scheme:light;--navy:#162c45;--blue:#2563eb;--bg:#f1f5fa;--muted:#52657b;--red:#b42318;--green:#087443}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:16px system-ui,-apple-system,Roboto,Arial,sans-serif;color:#152639}
+main{max-width:720px;margin:auto;padding:18px 14px 40px}header{background:var(--navy);color:#fff;padding:22px 20px;border-radius:16px;margin-bottom:16px}h1{font-size:1.45rem;margin:0 0 7px}header p{margin:0;color:#dce7f8;font-size:.93rem}
+.card{background:#fff;border:1px solid #dce3ed;border-radius:15px;padding:16px;margin:12px 0;box-shadow:0 2px 10px #1a38520a}
+h2{font-size:1.05rem;margin:0 0 13px}.pair{display:grid;grid-template-columns:31px 1fr 1fr;gap:9px;align-items:end;margin:0 0 12px}.pair:last-child{margin-bottom:0}.num{padding-bottom:12px;color:var(--muted);font-weight:700}.pair label{display:block;color:#46566b;font-size:.83rem;font-weight:650;margin-bottom:5px}input[type=time]{display:block;width:100%;height:45px;padding:8px;border:1px solid #aebed1;border-radius:9px;background:#fff;font:inherit;font-variant-numeric:tabular-nums;color:#182b40;min-width:0}
+.summary{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{background:#f4f7fc;border-radius:10px;padding:12px}.stat span{display:block;font-size:.82rem;color:var(--muted)}.stat strong{font-size:1.45rem;font-variant-numeric:tabular-nums}.suggestion{margin-top:13px;background:#eaf3ff;padding:14px;border-radius:10px;line-height:1.5}.suggestion strong{color:#123d85}.error{color:var(--red);font-weight:650;white-space:pre-line;margin:12px 0 0}.ok{color:var(--green)}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}button{font:inherit;font-weight:700;padding:13px 10px;border:0;border-radius:11px;cursor:pointer}#download{background:var(--blue);color:white}#download:disabled{opacity:.45;cursor:not-allowed}#reset{background:#e5ebf3;color:#213650}small{display:block;color:var(--muted);margin-top:10px;line-height:1.5}footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:18px}@media(max-width:390px){main{padding:12px 9px 35px}.card{padding:12px}.pair{gap:6px;grid-template-columns:23px 1fr 1fr}input[type=time]{padding:5px;font-size:15px}}
+</style>
+</head>
+<body><main>
+<header><h1>Calcolatore ore lavorate</h1><p>Fino a 8 coppie di entrata e uscita • Formato 24 ore</p></header>
+<section class="card"><h2>Timbrature</h2><div id="pairs"></div><small>Inserisci le timbrature in ordine cronologico. Se sei ancora al lavoro, lascia vuota l'ultima uscita: calcolerò quando potrai uscire per completare le 8 ore.</small></section>
+<section class="card" aria-live="polite"><h2>Riepilogo</h2><div class="summary"><div class="stat"><span>Ore lavorate</span><strong id="worked">00:00</strong></div><div class="stat"><span>Saldo su 8 ore</span><strong id="balance">−08:00</strong></div></div><div id="suggestion" class="suggestion">Inserisci un orario di entrata.</div><p id="error" class="error" role="alert" hidden></p><div class="buttons"><button type="button" id="download">⬇ Scarica report</button><button type="button" id="reset">Azzera</button></div><small>Il report TXT viene creato sul dispositivo, senza inviare i dati a server.</small></section>
+<footer>Calcolo presenze • Orari HH:MM</footer>
+</main>
+<script>
+'use strict';
+const pairsEl=document.getElementById('pairs');
+for(let i=0;i<8;i++){
+  const r=document.createElement('div');r.className='pair';
+  const n=document.createElement('span');n.className='num';n.textContent=i+1+'.';r.append(n);
+  for(const [kind,label] of [['in','Entrata'],['out','Uscita']]){
+    const wrap=document.createElement('div'),lab=document.createElement('label'),inp=document.createElement('input');
+    inp.id=kind+i;inp.type='time';inp.step=60;inp.setAttribute('aria-label',label+' '+(i+1));
+    lab.htmlFor=inp.id;lab.textContent=label;wrap.append(lab,inp);r.append(wrap);
+  }pairsEl.append(r);
+}
+const inputs=[...document.querySelectorAll('input[type="time"]')];
+const minOf=v=>{if(!/^\d{2}:\d{2}$/.test(v))return null;const [h,m]=v.split(':').map(Number);return h>=0&&h<24&&m>=0&&m<60?h*60+m:null};
+const hhmm=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+const signed=n=>(n<0?'−':n>0?'+':'')+hhmm(Math.abs(n));
+const el=id=>document.getElementById(id);
+let lastResult=null;
+function calculate(){
+  let total=0,previousExit=null,openEntry=null,used=[],errors=[],foundGap=false;
+  for(let i=0;i<8;i++){
+    const a=el('in'+i).value,b=el('out'+i).value;
+    if(!a&&!b){if(used.length)foundGap=true;continue;}
+    if(foundGap)errors.push('Compila le coppie in sequenza, senza righe vuote intermedie.');
+    const start=minOf(a),end=minOf(b);
+    if(start===null){errors.push('Riga '+(i+1)+': manca l’entrata.');continue;}
+    if(openEntry!==null){errors.push('Riga '+(i+1)+': completa prima l’uscita precedente.');continue;}
+    if(previousExit!==null&&start<previousExit)errors.push('Riga '+(i+1)+': entrata antecedente all’uscita precedente.');
+    if(end===null){openEntry=start;used.push({i:i+1,a,b:'',duration:null});if(i<7&&inputs.slice((i+1)*2).some(x=>x.value))errors.push('Solo l’ultima coppia compilata può avere l’uscita vuota.');continue;}
+    if(end<=start){errors.push('Riga '+(i+1)+': l’uscita deve essere successiva all’entrata (stessa giornata).');continue;}
+    total+=end-start;previousExit=end;used.push({i:i+1,a,b,duration:end-start});
+  }
+  // Non si può suggerire un'uscita se l'intervallo richiesto supera la mezzanotte.
+  const remaining=Math.max(0,480-total);
+  const suggested=openEntry!==null&&remaining>0?openEntry+remaining:null;
+  const suggestion=suggested!==null&&suggested<1440?hhmm(suggested):null;
+  if(suggested!==null&&suggested>=1440)errors.push('L’uscita necessaria supera la mezzanotte: calcolo non supportato.');
+  el('worked').textContent=hhmm(total);el('balance').textContent=signed(total-480);
+  const msg=el('suggestion'),err=el('error');err.hidden=!errors.length;err.textContent=[...new Set(errors)].join('\n');
+  if(errors.length){msg.textContent='Correggi le timbrature indicate per ottenere un risultato valido.';}
+  else if(openEntry!==null&&total>=480){msg.innerHTML='Hai già completato <strong>8 ore</strong> prima dell’ultima entrata.';}
+  else if(suggestion){msg.innerHTML='Per completare le 8 ore dovresti uscire alle: <strong>'+suggestion+'</strong>'+(suggestion< hhmm(openEntry)?'':'');}
+  else if(openEntry!==null){msg.textContent='Impossibile suggerire l’uscita nella giornata corrente.';}
+  else if(total>=480){msg.innerHTML='<strong>Obiettivo di 8 ore raggiunto.</strong>'+(total>480?' Hai effettuato '+hhmm(total-480)+' in più.':'');}
+  else if(used.length){msg.textContent='Ti mancano '+hhmm(480-total)+' per completare le 8 ore. Inserisci una nuova entrata per conoscere l’orario di uscita.';}
+  else{msg.textContent='Inserisci un orario di entrata.';}
+  lastResult=errors.length?null:{total,used,openEntry,suggestion,remaining};
+  el('download').disabled=!lastResult||!used.length;
+}
+inputs.forEach(x=>x.addEventListener('input',calculate));
+el('reset').addEventListener('click',()=>{if(!confirm('Vuoi cancellare tutte le timbrature?'))return;inputs.forEach(x=>x.value='');calculate()});
+const two=n=>String(n).padStart(2,'0');
+el('download').addEventListener('click',()=>{
+  calculate();if(!lastResult)return;
+  const now=new Date(),stamp=two(now.getDate())+two(now.getMonth()+1)+String(now.getFullYear()).slice(-2)+two(now.getHours())+two(now.getMinutes());
+  const date=two(now.getDate())+'/'+two(now.getMonth()+1)+'/'+now.getFullYear();
+  const time=two(now.getHours())+':'+two(now.getMinutes());
+  const r=lastResult;
+  const lines=['REPORT ORE LAVORATE','Generato il: '+date+' alle '+time,'','ENTRATE / USCITE'];
+  r.used.forEach(p=>lines.push(p.i+'. '+p.a+' - '+(p.b||'(uscita da inserire)')+'  |  '+(p.duration===null?'in corso':hhmm(p.duration))));
+  lines.push('','Totale intervalli conclusi: '+hhmm(r.total),'Obiettivo giornaliero: 08:00','Saldo intervalli conclusi: '+signed(r.total-480));
+  if(r.suggestion)lines.push('Per completare le 8 ore dovresti uscire alle: '+r.suggestion);
+  else if(r.openEntry!==null)lines.push('Ultimo intervallo aperto: non compreso nel totale.');
+  else if(r.total>=480)lines.push('Obiettivo raggiunto.');
+  else lines.push('Ore mancanti: '+hhmm(r.remaining));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')+'\r\n'],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='report_'+stamp+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+});
+calculate();
+</script></body></html>
