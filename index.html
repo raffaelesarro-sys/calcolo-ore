@@ -99,6 +99,7 @@ th{color:var(--muted);font-weight:700}
 <header>
   <h1>Calcolatore orario SAM</h1>
   <p>Previsione giornaliera secondo i criteri comunicati: allineamento E/U ai 15', permessi e straordinari a blocchi di 30'.</p>
+  <p style="margin-top:7px;opacity:.82;font-size:11px">Versione 2 · 30/10/2026</p>
 </header>
 
 <section class="card">
@@ -119,19 +120,20 @@ th{color:var(--muted);font-weight:700}
     <div class="metric"><div class="v" id="actual">0:00</div><div class="k">Tempo reale marcato</div></div>
     <div class="metric"><div class="v" id="recognized">0:00</div><div class="k">Tempo riconoscibile dopo allineamento 15'</div></div>
     <div class="metric"><div class="v" id="missing">8:00</div><div class="k">Mancano alle 8 ore</div></div>
-    <div class="metric"><div class="v" id="permit">8:00</div><div class="k">Permesso teorico se chiudessi ora*</div></div>
-    <div class="metric"><div class="v" id="overtime">0:00</div><div class="k">Straordinario teorico riconoscibile</div></div>
+    <div class="metric"><div class="v" id="permit">8:00</div><div class="k">Permesso teorico sulle coppie chiuse*</div></div>
+    <div class="metric"><div class="v" id="overtime">0:00</div><div class="k">Straordinario teorico (da confermare con l’azienda)</div></div>
     <div class="metric"><div class="v" id="discarded">0:00</div><div class="k">Minuti assorbiti dall'allineamento</div></div>
   </div>
   <div id="exitBox" class="exitbox" style="display:none"></div>
   <div id="detail"></div>
   <button type="button" class="primary" id="downloadBtn" disabled style="width:100%;margin-top:14px">⬇ Scarica report TXT</button>
   <p class="small">Nome del file: report_GGMMAAHHMM.txt. I dati restano nel dispositivo.</p>
+  <p class="small"><b>Marcature originali:</b> gli orari inseriti rimangono invariati nel dettaglio e nel TXT. Gli orari allineati sono solo il risultato della simulazione.</p>
   <div class="note">
     * Previsione tecnica, non cedolino ufficiale. Il calcolo assume: ingresso al quarto d'ora successivo,
     uscita al quarto d'ora precedente; compensazione nella giornata; permesso arrotondato al blocco
     successivo di 30'; straordinario riconosciuto solo per blocchi continuativi di almeno 30'.
-    Eventuali causali, autorizzazioni o elaborazioni SAM possono modificare il risultato effettivo.
+    Se una coppia è aperta, i totali considerano soltanto le coppie già chiuse. Le marcature originali non vengono mai sostituite dagli orari allineati. Il valore dello straordinario è solo teorico: eventuali causali, autorizzazioni o altre elaborazioni SAM possono modificare il riconoscimento effettivo.
   </div>
 </section>
 
@@ -143,7 +145,8 @@ th{color:var(--muted);font-weight:700}
       <li>Ogni uscita viene portata al quarto d'ora utile precedente.</li>
       <li>Le durate riconoscibili delle coppie vengono sommate e compensate nella stessa giornata.</li>
       <li>Sotto 8:00 viene mostrato il deficit; il permesso teorico è arrotondato per eccesso a blocchi di 30 minuti.</li>
-      <li>Oltre 8:00, lo straordinario viene conteggiato solo nei blocchi continuativi post-soglia di almeno 30 minuti, senza sommare spezzoni separati da 15 minuti.</li>
+      <li>Oltre 8:00, lo straordinario <b>teorico</b> viene conteggiato solo nei blocchi continuativi post-soglia di almeno 30 minuti, senza sommare spezzoni separati da 15 minuti. L’effettivo riconoscimento può richiedere ulteriori condizioni aziendali.</li>
+      <li>Il calcolo riguarda marcature di una sola giornata e non gestisce turni che superano la mezzanotte.</li>
       <li>Viene sempre indicata l'uscita utile per completare le 8 ore: se l'ultima coppia è aperta, calcola quando uscire; se è già chiusa ma mancano minuti, indica a che ora sarebbe stato necessario uscire prolungando l'ultima presenza.</li>
     </ol>
   </details>
@@ -193,6 +196,16 @@ let lastReport = null;
 function calculate(){
   lastReport = null; document.getElementById("downloadBtn").disabled=true;
   const err=document.getElementById('error'); err.textContent='';
+  const status=document.getElementById('status');
+  const exitBox=document.getElementById('exitBox');
+  // Evita che dati vecchi restino visualizzati quando una nuova marcatura è errata.
+  document.getElementById('detail').innerHTML='';
+  exitBox.style.display='none';
+  status.className='status warn';
+  status.textContent='Verifica delle marcature in corso.';
+  ['actual','recognized','overtime','discarded'].forEach(id=>document.getElementById(id).textContent='0:00');
+  document.getElementById('missing').textContent='8:00';
+  document.getElementById('permit').textContent='8:00';
   let pairs=[], open=null, seenBlank=false;
 
   for(let i=1;i<=8;i++){
@@ -207,7 +220,10 @@ function calculate(){
 
     if(open){ err.textContent="La coppia aperta deve essere l’ultima compilata."; return; }
     if(tout===null){
-      if(open){ err.textContent='Può esserci una sola coppia aperta.'; return; }
+      // Una nuova entrata non può precedere l'ultima uscita già compilata.
+      if(pairs.length && tin < pairs[pairs.length-1].tout){
+        err.textContent=`L'entrata ${i} precede l'ultima uscita registrata.`; return;
+      }
       open={i,tin};
       continue;
     }
@@ -250,10 +266,9 @@ function calculate(){
   document.getElementById('overtime').textContent=fmt(overtime);
   document.getElementById('discarded').textContent=fmt(discarded);
 
-  const status=document.getElementById('status');
   if(recognized>=480){
     status.className='status ok';
-    status.textContent=`8 ore raggiunte. Totale riconoscibile: ${fmt(recognized)}${overtime?` — straordinario teorico: ${fmt(overtime)}`:''}.`;
+    status.textContent=`8 ore raggiunte. Totale simulato: ${fmt(recognized)}${overtime?` — straordinario teorico da confermare: ${fmt(overtime)}`:''}.`;
   }else if(open){
     status.className='status warn';
     status.textContent=`Giornata aperta: mancano ${fmt(missing)} riconoscibili alle 8 ore.`;
@@ -262,7 +277,6 @@ function calculate(){
     status.textContent=`8 ore non raggiunte: mancano ${fmt(missing)}. Permesso teorico: ${fmt(permit)}.`;
   }
 
-  const exitBox=document.getElementById('exitBox');
   const needForEight=Math.max(0,480-recognized);
 
   if(open){
@@ -271,6 +285,8 @@ function calculate(){
     exitBox.style.display='block';
     if(needForEight===0){
       exitBox.innerHTML=`Hai già raggiunto le 8 ore con le coppie precedenti.`;
+    }else if(targetAlignedOut>=1440){
+      exitBox.innerHTML=`<strong>Non raggiungibile nella stessa giornata.</strong><br><span class="small">Per completare le 8 ore servirebbe superare la mezzanotte, situazione non gestita da questa simulazione.</span>`;
     }else{
       exitBox.innerHTML=
         `<span class="small">Per completare le 8 ore dovresti uscire alle:</span><br>
@@ -283,8 +299,9 @@ function calculate(){
     const last=pairs[pairs.length-1];
     const targetAlignedOut=last.aout+needForEight;
     exitBox.style.display='block';
-    exitBox.innerHTML=
-      `<span class="small">Per completare le 8 ore avresti dovuto uscire alle:</span><br>
+    exitBox.innerHTML=targetAlignedOut>=1440
+      ? `<strong>Non raggiungibile nella stessa giornata.</strong><br><span class="small">Sarebbe necessario superare la mezzanotte, evento non gestito.</span>`
+      : `<span class="small">Per completare le 8 ore avresti dovuto uscire alle:</span><br>
        <strong>${clock(targetAlignedOut)}</strong><br>
        <span class="small">Ultima uscita inserita: ${clock(last.tout)} → riconosciuta fino alle ${clock(last.aout)}. Mancano ${fmt(needForEight)} riconoscibili.</span>`;
   } else {
@@ -303,7 +320,7 @@ function calculate(){
   document.getElementById('downloadBtn').disabled=false;
   document.getElementById('detail').innerHTML=`
     <details>
-      <summary>Dettaglio delle coppie</summary>
+      <summary>Dettaglio delle coppie (timbrature originali / simulazione)</summary>
       <table><thead><tr><th>#</th><th>Reale</th><th>Allineato 15'</th><th class="right">Riconoscibile</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </details>`;
@@ -313,7 +330,8 @@ function reportText(data,stamp){
   const lines=[
     'CALCOLATORE ORARIO SAM - REPORT PREVISIONALE',
     `Generato il: ${String(stamp.getDate()).padStart(2,'0')}/${String(stamp.getMonth()+1).padStart(2,'0')}/${stamp.getFullYear()} ${String(stamp.getHours()).padStart(2,'0')}:${String(stamp.getMinutes()).padStart(2,'0')}`,
-    '', 'TIMBRATURE (REALE / ALLINEATO AL QUARTO D’ORA)'];
+    '', 'TIMBRATURE ORIGINALI / ALLINEAMENTO SIMULATO AI 15 MINUTI',
+    'Gli orari originali sono riportati esattamente come inseriti, normalizzati in formato 24 ore. Non sono sostituiti dagli orari elaborati.'];
   for(const p of data.pairs){
     lines.push(`${p.i}. ${clock(p.tin)} - ${clock(p.tout)} | ${clock(p.ain)} - ${clock(p.aout)} | durata reale ${fmt(p.actual)} | riconoscibile ${fmt(p.rec)}`);
   }
@@ -324,14 +342,14 @@ function reportText(data,stamp){
     `Minuti assorbiti dall'allineamento: ${fmt(data.discarded)}`,
     `Mancanti per raggiungere otto ore: ${fmt(data.missing)}`,
     `Permesso teorico (blocchi da trenta minuti): ${fmt(data.permit)}`,
-    `Straordinario teorico riconoscibile: ${fmt(data.overtime)}`,
+    `Straordinario teorico (da confermare con l'azienda): ${fmt(data.overtime)}`,
     `Giornata: ${data.open?'APERTA':'CHIUSA'}`,
     '', 'CRITERI DELLA SIMULAZIONE',
     'Entrate al quarto successivo; uscite al quarto precedente.',
     'Somma delle durate allineate nella giornata.',
     'Permesso teorico per eccesso a blocchi di trenta minuti.',
     'Straordinario teorico a blocchi continuativi di trenta minuti oltre otto ore, senza accumulo di spezzoni separati.',
-    '', 'AVVERTENZA: simulazione non ufficiale. Causali, autorizzazioni, compensazioni e regole SAM possono variare il riconoscimento.');
+    '', 'AVVERTENZA: simulazione non ufficiale. Il riconoscimento dello straordinario può dipendere anche da autorizzazioni o causali aziendali. La regola implementata è una ricostruzione, non un algoritmo SAM certificato.');
   return lines.join('\r\n')+'\r\n';
 }
 function downloadReport(){
@@ -359,7 +377,20 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   document.getElementById('status').className='status warn';
   document.getElementById('status').textContent="Inserisci almeno un'entrata.";
 });
-document.querySelectorAll('#pairs input').forEach(input=>input.addEventListener('input',()=>{lastReport=null;document.getElementById('downloadBtn').disabled=true;}));
+document.querySelectorAll('#pairs input').forEach(input=>input.addEventListener('input',()=>{
+  lastReport=null;
+  document.getElementById('downloadBtn').disabled=true;
+  document.getElementById('status').className='status warn';
+  document.getElementById('status').textContent='Marcature modificate: premi Calcola per aggiornare il risultato.';
+}));
+
+// PWA installabile su GitHub Pages (solo HTTPS o localhost).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'})
+      .catch(error => console.warn('Service Worker non registrato:', error));
+  });
+}
 </script>
 </body>
 </html>
